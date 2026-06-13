@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Performance Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f172a; --surface: #1e293b; --border: #334155;
+    --text: #e2e8f0; --muted: #94a3b8; --accent: #3b82f6;
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308; --purple: #a855f7;
+    --orange: #f97316; --cyan: #06b6d4;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+  .header { padding: 20px 32px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .header h1 { font-size: 1.5rem; font-weight: 700; }
+  .header h1 span { color: var(--accent); }
+  .filters { display: flex; gap: 12px; align-items: center; }
+  .filters select, .filters input { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 0.85rem; cursor: pointer; }
+  .filters select:focus, .filters input:focus { outline: none; border-color: var(--accent); }
+  .container { padding: 24px 32px; }
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .kpi .label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .kpi .value { font-size: 1.8rem; font-weight: 700; }
+  .kpi .change { font-size: 0.8rem; margin-top: 4px; }
+  .kpi .change.up { color: var(--green); }
+  .kpi .change.down { color: var(--red); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .card h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 16px; }
+  .card canvas { width: 100% !important; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+  .badge-green { background: rgba(34,197,94,.15); color: var(--green); }
+  .badge-yellow { background: rgba(234,179,8,.15); color: var(--yellow); }
+  .badge-red { background: rgba(239,68,68,.15); color: var(--red); }
+  .badge-blue { background: rgba(59,130,246,.15); color: var(--accent); }
+  .progress-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .progress-bar .fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tab { padding: 8px 16px; border-radius: 8px; background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; }
+  .tab.active { background: var(--accent); color: #fff; }
+  @media (max-width: 1024px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>SPO</span> Sales Dashboard</h1>
+  <div class="filters">
+    <select id="filterRegion">
+      <option value="all">All Regions</option>
+      <option value="north">North America</option>
+      <option value="europe">Europe</option>
+      <option value="apac">APAC</option>
+      <option value="latam">LATAM</option>
+    </select>
+    <select id="filterQuarter">
+      <option value="Q2-2026">Q2 2026</option>
+      <option value="Q1-2026">Q1 2026</option>
+      <option value="Q4-2025">Q4 2025</option>
+      <option value="Q3-2025">Q3 2025</option>
+    </select>
+    <select id="filterTeam">
+      <option value="all">All Teams</option>
+      <option value="enterprise">Enterprise</option>
+      <option value="mid-market">Mid-Market</option>
+      <option value="smb">SMB</option>
+    </select>
+  </div>
+</div>
+
+<div class="container">
+  <!-- KPIs -->
+  <div class="kpi-row" id="kpiRow"></div>
+
+  <!-- Revenue + Pipeline -->
+  <div class="grid-2">
+    <div class="card">
+      <h3>Monthly Revenue Trend</h3>
+      <canvas id="revenueChart" height="220"></canvas>
+    </div>
+    <div class="card">
+      <h3>Pipeline by Stage</h3>
+      <canvas id="pipelineChart" height="220"></canvas>
+    </div>
+  </div>
+
+  <!-- Rep Engagement + Meeting Metrics -->
+  <div class="grid-2">
+    <div class="card">
+      <h3>Sales Rep Engagement Metrics</h3>
+      <div class="tabs">
+        <button class="tab active" data-tab="calls">Calls</button>
+        <button class="tab" data-tab="emails">Emails</button>
+        <button class="tab" data-tab="demos">Demos</button>
+      </div>
+      <canvas id="engagementChart" height="200"></canvas>
+    </div>
+    <div class="card">
+      <h3>Meeting Metrics with Customers</h3>
+      <canvas id="meetingChart" height="200"></canvas>
+    </div>
+  </div>
+
+  <!-- Win/Loss + Conversion -->
+  <div class="grid-3">
+    <div class="card">
+      <h3>Win/Loss Analysis</h3>
+      <canvas id="winLossChart" height="200"></canvas>
+    </div>
+    <div class="card">
+      <h3>Conversion Funnel</h3>
+      <canvas id="funnelChart" height="200"></canvas>
+    </div>
+    <div class="card">
+      <h3>Deal Size Distribution</h3>
+      <canvas id="dealSizeChart" height="200"></canvas>
+    </div>
+  </div>
+
+  <!-- Leaderboard + Activity -->
+  <div class="grid-2">
+    <div class="card">
+      <h3>Rep Leaderboard</h3>
+      <table id="leaderboardTable">
+        <thead><tr><th>Rep</th><th>Closed</th><th>Quota %</th><th>Pipeline</th><th>Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Recent Activity Feed</h3>
+      <div id="activityFeed" style="max-height:320px;overflow-y:auto;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DATA = {
+  "all": {
+    kpis: { revenue: 2840000, target: 3500000, deals: 147, avgDeal: 19320, pipeline: 8750000, winRate: 34, meetings: 482, nps: 72 },
+    revenueMonths: ["Jan","Feb","Mar","Apr","May","Jun"],
+    revenueClosed: [380,420,490,510,530,510],
+    revenueTarget: [500,500,550,550,600,600],
+    pipeline: { stages: ["Prospecting","Qualification","Proposal","Negotiation","Closed Won"], values: [3200,2100,1650,980,820] },
+    engagement: {
+      calls: { reps: ["Sarah","Mike","Priya","Jake","Lena"], values: [142,118,156,98,134] },
+      emails: { reps: ["Sarah","Mike","Priya","Jake","Lena"], values: [312,287,345,198,276] },
+      demos: { reps: ["Sarah","Mike","Priya","Jake","Lena"], values: [28,22,31,15,25] }
+    },
+    meetings: { types: ["Discovery","Demo","Technical","Executive","QBR"], booked: [85,62,44,28,18], completed: [72,54,38,24,15], noShow: [13,8,6,4,3] },
+    winLoss: { won: 34, lost: 28, pending: 38 },
+    funnel: { stages: ["Leads","MQLs","SQLs","Opps","Closed"], values: [1200,680,320,147,50] },
+    dealSize: { ranges: ["<$5K","$5-15K","$15-30K","$30-50K","$50K+"], counts: [32,45,38,22,10] },
+    leaderboard: [
+      { name: "Sarah Chen", closed: 620000, quota: 112, pipeline: 1450000, status: "green" },
+      { name: "Priya Patel", closed: 580000, quota: 105, pipeline: 1320000, status: "green" },
+      { name: "Lena Müller", closed: 510000, quota: 92, pipeline: 980000, status: "yellow" },
+      { name: "Mike Ross", closed: 480000, quota: 87, pipeline: 1100000, status: "yellow" },
+      { name: "Jake Torres", closed: 340000, quota: 62, pipeline: 750000, status: "red" },
+      { name: "Amy Liu", closed: 310000, quota: 56, pipeline: 680000, status: "red" }
+    ],
+    activities: [
+      { time: "2m ago", rep: "Sarah", action: "Closed deal", detail: "Acme Corp — $85,000", type: "green" },
+      { time: "18m ago", rep: "Priya", action: "Demo completed", detail: "Globex Inc — Enterprise plan", type: "blue" },
+      { time: "35m ago", rep: "Mike", action: "Proposal sent", detail: "Initech — $42,000", type: "yellow" },
+      { time: "1h ago", rep: "Lena", action: "Meeting booked", detail: "Wayne Enterprises — QBR", type: "blue" },
+      { time: "1h ago", rep: "Jake", action: "Deal lost", detail: "Stark Industries — went with competitor", type: "red" },
+      { time: "2h ago", rep: "Sarah", action: "Call completed", detail: "Umbrella Corp — follow-up", type: "blue" },
+      { time: "3h ago", rep: "Amy", action: "Email sequence started", detail: "Cyberdyne — 5-touch cadence", type: "yellow" },
+      { time: "4h ago", rep: "Priya", action: "Moved to Negotiation", detail: "Oscorp — $120,000", type: "green" }
+    ]
+  },
+  "north": {
+    kpis: { revenue: 1420000, target: 1750000, deals: 72, avgDeal: 19722, pipeline: 4200000, winRate: 38, meetings: 240, nps: 75 },
+    revenueMonths: ["Jan","Feb","Mar","Apr","May","Jun"],
+    revenueClosed: [200,220,250,260,260,230],
+    revenueTarget: [250,250,275,275,300,300],
+    pipeline: { stages: ["Prospecting","Qualification","Proposal","Negotiation","Closed Won"], values: [1600,1050,820,480,450] },
+    engagement: {
+      calls: { reps: ["Sarah","Mike"], values: [142,118] },
+      emails: { reps: ["Sarah","Mike"], values: [312,287] },
+      demos: { reps: ["Sarah","Mike"], values: [28,22] }
+    },
+    meetings: { types: ["Discovery","Demo","Technical","Executive","QBR"], booked: [42,30,22,14,9], completed: [36,26,19,12,8], noShow: [6,4,3,2,1] },
+    winLoss: { won: 18, lost: 12, pending: 20 },
+    funnel: { stages: ["Leads","MQLs","SQLs","Opps","Closed"], values: [600,340,160,72,26] },
+    dealSize: { ranges: ["<$5K","$5-15K","$15-30K","$30-50K","$50K+"], counts: [14,22,20,11,5] },
+    leaderboard: [
+      { name: "Sarah Chen", closed: 620000, quota: 112, pipeline: 1450000, status: "green" },
+      { name: "Mike Ross", closed: 480000, quota: 87, pipeline: 1100000, status: "yellow" }
+    ],
+    activities: [
+      { time: "2m ago", rep: "Sarah", action: "Closed deal", detail: "Acme Corp — $85,000", type: "green" },
+      { time: "35m ago", rep: "Mike", action: "Proposal sent", detail: "Initech — $42,000", type: "yellow" }
+    ]
+  },
+  "europe": {
+    kpis: { revenue: 780000, target: 950000, deals: 42, avgDeal: 18571, pipeline: 2500000, winRate: 32, meetings: 135, nps: 70 },
+    revenueMonths: ["Jan","Feb","Mar","Apr","May","Jun"],
+    revenueClosed: [100,110,130,140,150,150],
+    revenueTarget: [140,140,155,155,170,170],
+    pipeline: { stages: ["Prospecting","Qualification","Proposal","Negotiation","Closed Won"], values: [900,580,460,280,210] },
+    engagement: {
+      calls: { reps: ["Lena"], values: [134] },
+      emails: { reps: ["Lena"], values: [276] },
+      demos: { reps: ["Lena"], values: [25] }
+    },
+    meetings: { types: ["Discovery","Demo","Technical","Executive","QBR"], booked: [24,18,12,8,5], completed: [20,15,10,7,4], noShow: [4,3,2,1,1] },
+    winLoss: { won: 9, lost: 8, pending: 10 },
+    funnel: { stages: ["Leads","MQLs","SQLs","Opps","Closed"], values: [330,190,88,42,14] },
+    dealSize: { ranges: ["<$5K","$5-15K","$15-30K","$30-50K","$50K+"], counts: [10,13,10,6,3] },
+    leaderboard: [
+      { name: "Lena Müller", closed: 510000, quota: 92, pipeline: 980000, status: "yellow" }
+    ],
+    activities: [
+      { time: "1h ago", rep: "Lena", action: "Meeting booked", detail: "Wayne Enterprises — QBR", type: "blue" }
+    ]
+  },
+  "apac": {
+    kpis: { revenue: 420000, target: 520000, deals: 22, avgDeal: 19091, pipeline: 1350000, winRate: 30, meetings: 72, nps: 68 },
+    revenueMonths: ["Jan","Feb","Mar","Apr","May","Jun"],
+    revenueClosed: [50,55,70,75,85,85],
+    revenueTarget: [75,75,85,85,95,95],
+    pipeline: { stages: ["Prospecting","Qualification","Proposal","Negotiation","Closed Won"], values: [480,310,250,170,110] },
+    engagement: {
+      calls: { reps: ["Priya"], values: [156] },
+      emails: { reps: ["Priya"], values: [345] },
+      demos: { reps: ["Priya"], values: [31] }
+    },
+    meetings: { types: ["Discovery","Demo","Technical","Executive","QBR"], booked: [12,9,7,4,3], completed: [10,8,6,3,2], noShow: [2,1,1,1,1] },
+    winLoss: { won: 5, lost: 5, pending: 5 },
+    funnel: { stages: ["Leads","MQLs","SQLs","Opps","Closed"], values: [180,100,48,22,7] },
+    dealSize: { ranges: ["<$5K","$5-15K","$15-30K","$30-50K","$50K+"], counts: [5,7,5,3,2] },
+    leaderboard: [
+      { name: "Priya Patel", closed: 580000, quota: 105, pipeline: 1320000, status: "green" }
+    ],
+    activities: [
+      { time: "18m ago", rep: "Priya", action: "Demo completed", detail: "Globex Inc — Enterprise plan", type: "blue" }
+    ]
+  },
+  "latam": {
+    kpis: { revenue: 220000, target: 280000, deals: 11, avgDeal: 20000, pipeline: 700000, winRate: 28, meetings: 35, nps: 65 },
+    revenueMonths: ["Jan","Feb","Mar","Apr","May","Jun"],
+    revenueClosed: [30,35,40,35,40,40],
+    revenueTarget: [40,40,45,45,50,50],
+    pipeline: { stages: ["Prospecting","Qualification","Proposal","Negotiation","Closed Won"], values: [220,160,120,50,50] },
+    engagement: {
+      calls: { reps: ["Jake","Amy"], values: [98,80] },
+      emails: { reps: ["Jake","Amy"], values: [198,165] },
+      demos: { reps: ["Jake","Amy"], values: [15,12] }
+    },
+    meetings: { types: ["Discovery","Demo","Technical","Executive","QBR"], booked: [7,5,3,2,1], completed: [6,5,3,2,1], noShow: [1,0,0,0,0] },
+    winLoss: { won: 2, lost: 3, pending: 3 },
+    funnel: { stages: ["Leads","MQLs","SQLs","Opps","Closed"], values: [90,50,24,11,3] },
+    dealSize: { ranges: ["<$5K","$5-15K","$15-30K","$30-50K","$50K+"], counts: [3,3,3,2,0] },
+    leaderboard: [
+      { name: "Jake Torres", closed: 340000, quota: 62, pipeline: 750000, status: "red" },
+      { name: "Amy Liu", closed: 310000, quota: 56, pipeline: 680000, status: "red" }
+    ],
+    activities: [
+      { time: "1h ago", rep: "Jake", action: "Deal lost", detail: "Stark Industries — went with competitor", type: "red" },
+      { time: "3h ago", rep: "Amy", action: "Email sequence started", detail: "Cyberdyne — 5-touch cadence", type: "yellow" }
+    ]
+  }
+};
+
+const fmt = n => n >= 1e6 ? '$' + (n/1e6).toFixed(1) + 'M' : n >= 1e3 ? '$' + (n/1e3).toFixed(0) + 'K' : '$' + n;
+const chartDefaults = { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } }, scales: {} };
+const axisStyle = { ticks: { color: '#64748b', font: { size: 11 } }, grid: { color: 'rgba(51,65,85,0.5)' } };
+
+let charts = {};
+let currentTab = 'calls';
+
+function renderKPIs(d) {
+  const k = d.kpis;
+  const quotaPct = ((k.revenue / k.target) * 100).toFixed(0);
+  document.getElementById('kpiRow').innerHTML = [
+    { label: 'Revenue', value: fmt(k.revenue), change: `${quotaPct}% of target`, up: quotaPct >= 80 },
+    { label: 'Total Deals', value: k.deals, change: '+12% vs last Q', up: true },
+    { label: 'Avg Deal Size', value: fmt(k.avgDeal), change: '+5% vs last Q', up: true },
+    { label: 'Pipeline Value', value: fmt(k.pipeline), change: '2.5x coverage', up: true },
+    { label: 'Win Rate', value: k.winRate + '%', change: k.winRate >= 33 ? '+2pp' : '-1pp', up: k.winRate >= 33 },
+    { label: 'Meetings Held', value: k.meetings, change: '+8% vs last Q', up: true },
+    { label: 'Customer NPS', value: k.nps, change: k.nps >= 70 ? 'Above target' : 'Below target', up: k.nps >= 70 }
+  ].map(i => `<div class="kpi"><div class="label">${i.label}</div><div class="value">${i.value}</div><div class="change ${i.up?'up':'down'}">${i.up?'&#9650;':'&#9660;'} ${i.change}</div></div>`).join('');
+}
+
+function makeChart(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), cfg);
+}
+
+function renderRevenue(d) {
+  makeChart('revenueChart', {
+    type: 'bar',
+    data: {
+      labels: d.revenueMonths,
+      datasets: [
+        { label: 'Closed Revenue ($K)', data: d.revenueClosed, backgroundColor: '#3b82f6', borderRadius: 6 },
+        { label: 'Target ($K)', data: d.revenueTarget, type: 'line', borderColor: '#eab308', borderDash: [6,4], pointRadius: 0, fill: false }
+      ]
+    },
+    options: { ...chartDefaults, scales: { x: axisStyle, y: { ...axisStyle, beginAtZero: true } } }
+  });
+}
+
+function renderPipeline(d) {
+  const colors = ['#3b82f6','#06b6d4','#a855f7','#f97316','#22c55e'];
+  makeChart('pipelineChart', {
+    type: 'bar',
+    data: {
+      labels: d.pipeline.stages,
+      datasets: [{ label: 'Value ($K)', data: d.pipeline.values, backgroundColor: colors, borderRadius: 6 }]
+    },
+    options: { ...chartDefaults, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ...axisStyle, beginAtZero: true }, y: axisStyle } }
+  });
+}
+
+function renderEngagement(d, tab) {
+  const ed = d.engagement[tab];
+  makeChart('engagementChart', {
+    type: 'bar',
+    data: {
+      labels: ed.reps,
+      datasets: [{ label: tab.charAt(0).toUpperCase() + tab.slice(1), data: ed.values, backgroundColor: tab === 'calls' ? '#3b82f6' : tab === 'emails' ? '#a855f7' : '#22c55e', borderRadius: 6 }]
+    },
+    options: { ...chartDefaults, plugins: { legend: { display: false } }, scales: { x: axisStyle, y: { ...axisStyle, beginAtZero: true } } }
+  });
+}
+
+function renderMeetings(d) {
+  makeChart('meetingChart', {
+    type: 'bar',
+    data: {
+      labels: d.meetings.types,
+      datasets: [
+        { label: 'Booked', data: d.meetings.booked, backgroundColor: '#3b82f6', borderRadius: 4 },
+        { label: 'Completed', data: d.meetings.completed, backgroundColor: '#22c55e', borderRadius: 4 },
+        { label: 'No-show', data: d.meetings.noShow, backgroundColor: '#ef4444', borderRadius: 4 }
+      ]
+    },
+    options: { ...chartDefaults, scales: { x: axisStyle, y: { ...axisStyle, beginAtZero: true } } }
+  });
+}
+
+function renderWinLoss(d) {
+  makeChart('winLossChart', {
+    type: 'doughnut',
+    data: {
+      labels: ['Won','Lost','Pending'],
+      datasets: [{ data: [d.winLoss.won, d.winLoss.lost, d.winLoss.pending], backgroundColor: ['#22c55e','#ef4444','#eab308'], borderWidth: 0 }]
+    },
+    options: { ...chartDefaults, cutout: '60%' }
+  });
+}
+
+function renderFunnel(d) {
+  const maxVal = Math.max(...d.funnel.values);
+  const colors = ['#3b82f6','#06b6d4','#a855f7','#f97316','#22c55e'];
+  makeChart('funnelChart', {
+    type: 'bar',
+    data: {
+      labels: d.funnel.stages,
+      datasets: [{ data: d.funnel.values, backgroundColor: colors, borderRadius: 6 }]
+    },
+    options: { ...chartDefaults, plugins: { legend: { display: false } }, scales: { x: axisStyle, y: { ...axisStyle, beginAtZero: true } } }
+  });
+}
+
+function renderDealSize(d) {
+  makeChart('dealSizeChart', {
+    type: 'pie',
+    data: {
+      labels: d.dealSize.ranges,
+      datasets: [{ data: d.dealSize.counts, backgroundColor: ['#64748b','#3b82f6','#06b6d4','#a855f7','#22c55e'], borderWidth: 0 }]
+    },
+    options: { ...chartDefaults }
+  });
+}
+
+function renderLeaderboard(d) {
+  const tbody = document.querySelector('#leaderboardTable tbody');
+  tbody.innerHTML = d.leaderboard.map(r => {
+    const badgeCls = r.status === 'green' ? 'badge-green' : r.status === 'yellow' ? 'badge-yellow' : 'badge-red';
+    const statusLabel = r.status === 'green' ? 'On Track' : r.status === 'yellow' ? 'At Risk' : 'Behind';
+    return `<tr>
+      <td>${r.name}</td>
+      <td>${fmt(r.closed)}</td>
+      <td><div style="display:flex;align-items:center;gap:8px"><span>${r.quota}%</span><div class="progress-bar" style="width:80px"><div class="fill" style="width:${Math.min(r.quota,100)}%;background:${r.status==='green'?'var(--green)':r.status==='yellow'?'var(--yellow)':'var(--red)'}"></div></div></div></td>
+      <td>${fmt(r.pipeline)}</td>
+      <td><span class="badge ${badgeCls}">${statusLabel}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderActivity(d) {
+  document.getElementById('activityFeed').innerHTML = d.activities.map(a => {
+    const dotColor = a.type === 'green' ? 'var(--green)' : a.type === 'red' ? 'var(--red)' : a.type === 'yellow' ? 'var(--yellow)' : 'var(--accent)';
+    return `<div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="min-width:8px;margin-top:6px;width:8px;height:8px;border-radius:50%;background:${dotColor}"></div>
+      <div><div style="font-size:0.85rem"><strong>${a.rep}</strong> ${a.action}</div><div style="font-size:0.8rem;color:var(--muted)">${a.detail}</div><div style="font-size:0.75rem;color:var(--muted);margin-top:2px">${a.time}</div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderAll() {
+  const region = document.getElementById('filterRegion').value;
+  const d = DATA[region];
+  renderKPIs(d);
+  renderRevenue(d);
+  renderPipeline(d);
+  renderEngagement(d, currentTab);
+  renderMeetings(d);
+  renderWinLoss(d);
+  renderFunnel(d);
+  renderDealSize(d);
+  renderLeaderboard(d);
+  renderActivity(d);
+}
+
+document.getElementById('filterRegion').addEventListener('change', renderAll);
+document.getElementById('filterQuarter').addEventListener('change', renderAll);
+document.getElementById('filterTeam').addEventListener('change', renderAll);
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentTab = tab.dataset.tab;
+    const region = document.getElementById('filterRegion').value;
+    renderEngagement(DATA[region], currentTab);
+  });
+});
+
+renderAll();
+</script>
+</body>
+</html>
